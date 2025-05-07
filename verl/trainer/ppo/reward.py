@@ -15,9 +15,15 @@
 import os
 
 import ray
-
+from typing import Dict, Any, Optional, Callable
 from verl import DataProto
+from verl.third_party.glmv5.reward import compute_rewards as compute_glmv5_rewards
+from enum import Enum
+import json
 
+class RewardFunction(str, Enum):
+    GLM = "glmv5"
+    CUSTOM = "custom"
 
 def get_custom_reward_fn(config):
     import importlib.util
@@ -53,6 +59,20 @@ def get_custom_reward_fn(config):
 
     return wrapped_fn
 
+def get_custom_reward_glmv5_fn(config: Dict[str, Any]) -> Optional[Callable]:
+    reward_fn_config = config.get("custom_reward_function") or {}
+    if not reward_fn_config:
+        return None
+    
+    json_file = reward_fn_config.get("json_reward_config")
+    json_file = json.loads(json_file)
+    raw_fn = compute_glmv5_rewards(json_file)
+    reward_kwargs = dict(reward_fn_config.get("reward_kwargs", {}))
+
+    def wrapped_fn(*args, **kwargs):
+        return raw_fn(*args, **kwargs, **reward_kwargs)
+
+    return wrapped_fn
 
 def load_reward_manager(config, tokenizer, num_examine, **reward_kwargs):
     reward_manager_name = config.reward_model.get("reward_manager", "naive")
@@ -74,8 +94,18 @@ def load_reward_manager(config, tokenizer, num_examine, **reward_kwargs):
         reward_manager_cls = DAPORewardManager
     else:
         raise NotImplementedError
-
-    compute_score = get_custom_reward_fn(config)
+    custom_reward_fn_dict = config.get("custom_reward_function") or {}
+    if custom_reward_fn_dict:
+        if custom_reward_fn_dict.get("class_reward_fn") == RewardFunction.GLM:
+            compute_score = get_custom_reward_glmv5_fn(config)
+        elif custom_reward_fn_dict.get("class_reward_fn") == RewardFunction.CUSTOM:
+            compute_score = get_custom_reward_fn(config)
+            assert compute_score is not None, "Custom reward function is not defined"
+        else:
+            raise ValueError(f"Invalid reward function class: {custom_reward_fn_dict.get('class_reward_fn')}")
+    else:
+        compute_score = get_custom_reward_fn(config)
+    print("compute_score", compute_score)
     return reward_manager_cls(
         tokenizer=tokenizer,
         num_examine=num_examine,
