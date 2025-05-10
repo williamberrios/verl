@@ -51,7 +51,7 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
             use_cache=False,
             #server_url=config.server_url, # If server_url is not provided, it will launch a new server
             fail_on_invalid_data=False,
-            model = "lmunit-8b"
+            model = "lmunit-70b" # TODO: need to change or make it configurable
         )
 
     all_ut_samples = []

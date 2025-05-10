@@ -70,7 +70,7 @@ def lmunit_not_weighted_reward_batch(data_sources: List[str],
         sample_boundaries.append((current_idx, current_idx + len(ut_samples)))
         current_idx += len(ut_samples)
 
-
+    print(f"Length of all_ut_samples: {len(all_ut_samples)}")
     results = lmunit_pipeline(all_ut_samples)
     # Calculate scores for each solution
     final_scores = []

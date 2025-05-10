@@ -16,12 +16,9 @@ from verl.third_party.glmv5.reward.base import REWARD_FUNCTIONS
 from verl.third_party.glmv5.reward.lmunit_not_weighted import lmunit_not_weighted_reward_batch
 from verl.third_party.glmv5.reward.ingen_format import ingen_format_batch
 from verl.third_party.glmv5.reward.lmunit_weighted import lmunit_weighted_reward_batch
-import logging
 
-logger = logging.getLogger(__file__)
-logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
-def compute_rewards(config: Dict[str, float] = None) -> callable:
+def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -> callable:
     """
     Returns a reward function that computes weighted sum of multiple reward functions.
     
@@ -43,25 +40,37 @@ def compute_rewards(config: Dict[str, float] = None) -> callable:
     reward = reward_fn(data_source, solution_str, ground_truth, extra_info)
     """
     # Validate reward function names upfront
-    logger.info(f"Reward functions Keys: {REWARD_FUNCTIONS.keys()}")
+    print(f"Reward functions Keys: {REWARD_FUNCTIONS.keys()}")
     for name in config:
         if name not in REWARD_FUNCTIONS:
             raise ValueError(f"Reward function '{name}' not found in registry. Available reward functions: {list(REWARD_FUNCTIONS.keys())}")
     
     def reward_fn(data_sources, solution_strs, ground_truths, extra_infos=None):
         total_rewards = [0.0] * len(data_sources)
-        logger.info(f"Config: {config}")
+        dict_rewards = {}
+        
+        print(f"Config: {config}")
+        print(f"config.items: {config.keys()}")
+        
         for name, weight in config.items():
-            logger.info(f"name: {name}, weight: {weight}")
-            logger.info(f"Length of data_sources: {len(data_sources)}")
-            logger.info(f"Length of solution_strs: {len(solution_strs)}")
-            logger.info(f"Length of ground_truths: {len(ground_truths)}")
-            logger.info(f"Length of extra_infos: {len(extra_infos)}")
+            print(f"name: {name}, weight: {weight}")
+            print(f"Length of data_sources: {len(data_sources)}")
+            print(f"Length of solution_strs: {len(solution_strs)}")
+            print(f"Length of ground_truths: {len(ground_truths)}")
+            print(f"Length of extra_infos: {len(extra_infos)}")
+            
             rewards = REWARD_FUNCTIONS[name](data_sources, solution_strs, ground_truths, extra_infos)
+            dict_rewards[name] = rewards
+            
             if total_rewards is None:
                 total_rewards = [r * weight for r in rewards]
             else:
                 total_rewards = [t + (r * weight) for t, r in zip(total_rewards, rewards)]
-        return total_rewards
+            dict_rewards["total_rewards"] = total_rewards
+            
+        if output_all:
+            return dict_rewards
+        else:
+            return total_rewards
         
     return reward_fn

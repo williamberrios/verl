@@ -164,6 +164,9 @@ class ActorRolloutRefWorker(Worker):
 
         from verl.utils.model import get_generation_config, print_model_size, update_model_config
         from verl.utils.torch_dtypes import PrecisionType
+        # number of threads for it per process
+        from multiprocessing import cpu_count
+        torch.set_num_threads(cpu_count() // 8)
 
         assert role in ["actor", "ref"]
 
@@ -213,6 +216,11 @@ class ActorRolloutRefWorker(Worker):
                 attn_implementation="flash_attention_2",
                 trust_remote_code=trust_remote_code,
             )
+            # TODO: Verify that this speed up FSDP loading of models
+            # pin memory to speed up loading to GPU during FSDP wrap
+            for param in actor_module.parameters():
+                if param.device.type == 'cpu':
+                    param.data = param.data.pin_memory()
 
             if use_remove_padding or self.ulysses_sequence_parallel_size > 1:
                 from verl.models.transformers.monkey_patch import apply_monkey_patch

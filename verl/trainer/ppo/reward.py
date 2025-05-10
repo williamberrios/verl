@@ -20,7 +20,6 @@ from verl import DataProto
 from verl.third_party.glmv5.reward import compute_rewards as compute_glmv5_rewards
 from enum import Enum
 import json
-
 class RewardFunction(str, Enum):
     GLM = "glmv5"
     CUSTOM = "custom"
@@ -64,9 +63,12 @@ def get_custom_reward_glmv5_fn(config: Dict[str, Any]) -> Optional[Callable]:
     if not reward_fn_config:
         return None
     
-    json_file = reward_fn_config.get("json_reward_config")
-    json_file = json.loads(json_file)
-    raw_fn = compute_glmv5_rewards(json_file)
+    json_file_path = reward_fn_config.get("json_reward_config_path")
+    output_all = reward_fn_config.get("output_all", False)
+    print(f"json_file_path: {json_file_path}")
+    with open(json_file_path, 'r') as f:
+        json_file = json.load(f)
+    raw_fn = compute_glmv5_rewards(config=json_file, output_all=output_all)
     reward_kwargs = dict(reward_fn_config.get("reward_kwargs", {}))
 
     def wrapped_fn(*args, **kwargs):
@@ -115,7 +117,7 @@ def load_reward_manager(config, tokenizer, num_examine, **reward_kwargs):
     )
 
 
-def compute_reward(data: DataProto, reward_fn):
+def compute_reward(data: DataProto, reward_fn: Callable, output_all: bool = False):
     """
     Compute reward for a batch of data.
     Args:
