@@ -12,7 +12,7 @@ from verl.third_party.glmv5.reward.base import (
 from typing import Dict
 import re
 
-def validate_tags(response: str) -> bool:
+async def validate_tags(response: str) -> bool:
     """
     Validates that fact and commentary tags in a response are properly formatted.
     
@@ -75,12 +75,12 @@ def validate_tags(response: str) -> bool:
     # Stack should be empty if all tags are properly paired
     return len(stack) == 0
 
-@reward_function("ingen_format_batch")
-def ingen_format_batch(data_sources: List[str],
-                       solution_strs: List[str],
-                       ground_truths: List[str],
-                       extra_infos: List[Dict[str, Any]] = None,
-                       config: Dict[str, float] = None) -> List[float]:
+@reward_function("ingen_format_batch_async")
+async def ingen_format_batch_async(data_sources: List[str],
+                                   solution_strs: List[str],
+                                   ground_truths: List[str],
+                                   extra_infos: List[Dict[str, Any]] = None,
+                                   config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using ingen format.
 
@@ -102,10 +102,9 @@ def ingen_format_batch(data_sources: List[str],
     """
     rewards = []
     for solution in solution_strs:
-        if not validate_tags(solution):
+        if not await validate_tags(solution):
             reward = 0.0
         else:
             reward = 1.0
         rewards.append(reward)
     return rewards
-    

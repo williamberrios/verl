@@ -45,7 +45,8 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
     # Lazy init of the evaluator
     if not lmunit_pipeline:
         lmunit_pipeline = orch.LMUnitScorerWeighted(
-            inference_backend='lmunit',
+            inference_backend='http',
+            http_backend_server_type='lmunit',
             persistent_server=False, # TODO: Make this True, rn waiting never ends
             #server_uptime=24,
             use_cache=False,
@@ -75,7 +76,7 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
 
     results = lmunit_pipeline(all_ut_samples)
     # Calculate scores for each solution
-    final_scores = []
+    rewards = []
     for start_idx, end_idx in sample_boundaries:
         solution_results = results[start_idx:end_idx]
         scores = []
@@ -85,14 +86,16 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
                 scores.append(0.0)
             else:
                 scores.append(float(result.get("score", 0.0)))
-                
+        
+        # Remove not floats
         valid_scores = [item for item in scores if isinstance(item, float)]
         
         if len(valid_scores) == 0:
-            final_scores.append(0)
+            rewards.append(0)
         else:
-            final_scores.append(max(valid_scores) / LMUNIT_MAX_REWARD)  # Normalize to [0,1] range
+            # Calculate mean score and normalize to [0,1] range
+            rewards.append(np.mean(valid_scores) / LMUNIT_MAX_REWARD)
 
-    return final_scores
+    return rewards
 
 

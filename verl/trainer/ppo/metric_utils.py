@@ -51,7 +51,11 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
     # TODO: add response length
     sequence_score = batch.batch["token_level_scores"].sum(-1)
     sequence_reward = batch.batch["token_level_rewards"].sum(-1)
-
+    reward_extra_info_dict = {}
+    for key in batch.non_tensor_batch.keys():
+        if key.startswith("reward-"):
+            # Do not sum over the last dimension because size is same as the number of responses
+            reward_extra_info_dict[key] = batch.non_tensor_batch[key]
     advantages = batch.batch["advantages"]
     returns = batch.batch["returns"]
 
@@ -115,6 +119,12 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         "prompt_length/min": torch.min(prompt_length).detach().item(),
         "prompt_length/clip_ratio": torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
     }
+    # Add reward extra info metrics
+    for key, val in reward_extra_info_dict.items():
+        key_log = key.replace("reward-", "")
+        metrics[f"reward/{key_log}/mean"] = np.mean(val)
+        metrics[f"reward/{key_log}/max"] = np.max(val)
+        metrics[f"reward/{key_log}/min"] = np.min(val)
     return metrics
 
 

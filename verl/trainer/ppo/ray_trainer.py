@@ -27,7 +27,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
-from typing import Dict, Optional, Type
+from typing import Dict, Optional, Type, Union, List
+from torch import Tensor
 
 import numpy as np
 import ray
@@ -58,7 +59,7 @@ from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seql
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 from verl.workers.rollout.async_server import AsyncLLMServerManager
-
+from typing import List,Optional
 WorkerType = Type[Worker]
 
 
@@ -553,7 +554,7 @@ class RayPPOTrainer:
 
     def _validate(self):
         data_source_lst = []
-        reward_extra_infos_dict: dict[str, list] = defaultdict(list)
+        reward_extra_infos_dict: dict[str, Union[List,Tensor]] = defaultdict(list)
 
         # Lists to collect samples for the table
         sample_inputs = []
@@ -573,7 +574,8 @@ class RayPPOTrainer:
             # Store original inputs
             input_ids = test_batch.batch["input_ids"]
             # TODO: Can we keep special tokens except for padding tokens?
-            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
+            # TODO: Verify if it should be skip_special_tokens=True or False
+            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=False) for ids in input_ids]
             sample_inputs.extend(input_texts)
 
             batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
@@ -613,7 +615,7 @@ class RayPPOTrainer:
 
             # Store generated outputs
             output_ids = test_output_gen_batch.batch["responses"]
-            output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
+            output_texts = [self.tokenizer.decode(ids, skip_special_tokens=False) for ids in output_ids]
             sample_outputs.extend(output_texts)
 
             test_batch = test_batch.union(test_output_gen_batch)
@@ -621,13 +623,14 @@ class RayPPOTrainer:
             # evaluate using reward_function
             result = self.val_reward_fn(test_batch, return_dict=True)
             reward_tensor = result["reward_tensor"]
-            scores = reward_tensor.sum(-1).cpu().tolist()
+            # In case there an outcome reward, sum would be the same as the last element in the reward_tensor
+            scores = reward_tensor.sum(-1).cpu().tolist() 
             sample_scores.extend(scores)
 
             reward_extra_infos_dict["reward"].extend(scores)
             if "reward_extra_info" in result:
                 for key, lst in result["reward_extra_info"].items():
-                    reward_extra_infos_dict[key].extend(lst)
+                    reward_extra_infos_dict[key].extend(lst.tolist())
 
             data_source_lst.append(test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0]))
 
@@ -948,12 +951,17 @@ class RayPPOTrainer:
                     with _timer("reward", timing_raw):
                         # compute reward model score
                         if self.use_rm:
+                            # TODO: Implement multiple reward components for reward model
+                            # Currently only implementing for GRPO with no reward
                             reward_tensor = self.rm_wg.compute_rm_score(batch)
                             batch = batch.union(reward_tensor)
 
                         if self.config.reward_model.launch_reward_fn_async:
+                            # TODO: Implement multiple reward components for reward model
+                            # Currently only implementing for GRPO with no reward
                             future_reward = compute_reward_async.remote(batch, self.config, self.tokenizer)
                         else:
+                            # Implementation for GRPO multiple reward components
                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
 
                     # recompute old_log_probs
@@ -982,14 +990,19 @@ class RayPPOTrainer:
 
                     with _timer("adv", timing_raw):
                         # we combine with rule-based rm
-                        reward_extra_infos_dict: dict[str, list]
+                        reward_extra_infos_dict: dict[str, Union[List,Tensor]]
                         if self.config.reward_model.launch_reward_fn_async:
+                            # TODO: Implement multiple reward components
+                            # Currently only implementing for GRPO with no reward dict
                             reward_tensor, reward_extra_infos_dict = ray.get(future_reward)
                         batch.batch["token_level_scores"] = reward_tensor
-
+                        
                         print(f"{list(reward_extra_infos_dict.keys())=}")
+
                         if reward_extra_infos_dict:
-                            batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
+                            # Update the reward_extra_infos_dict to the batch.non_tensor_batch
+                            # reward_extra_infos_dict is dict of numpy arrays
+                            batch.non_tensor_batch.update({f"reward-{k}": np.array(v) for k, v in reward_extra_infos_dict.items()})
 
                         # compute rewards. apply_kl_penalty if available
                         if self.config.algorithm.use_kl_in_reward:

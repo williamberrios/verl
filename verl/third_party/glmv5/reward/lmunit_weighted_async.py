@@ -10,16 +10,16 @@ from verl.third_party.glmv5.reward.base import (
     logger
 )
 from typing import Dict
-# Cache the LMUnit pipeline globally to avoid repeated initialization in multiprocessing runs (e.g. more than 1 GPU)
+# Cache the LMUnit pipeline globally to avoid repeated initialization
 lmunit_pipeline = None
 LMUNIT_MAX_REWARD = 5.0
 
-@reward_function("lmunit_not_weighted_reward_batch")
-def lmunit_not_weighted_reward_batch(data_sources: List[str],
-                                     solution_strs: List[str],
-                                     ground_truths: List[str],
-                                     extra_infos: List[Dict[str, Any]] = None,
-                                     config: Dict[str, float] = None) -> List[float]:
+@reward_function("lmunit_weighted_reward_batch_async")
+async def lmunit_weighted_reward_batch_async(data_sources: List[str],
+                                             solution_strs: List[str],
+                                             ground_truths: List[str],
+                                             extra_infos: List[Dict[str, Any]] = None,
+                                             config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using LM-based unit test evaluation in batch.
 
@@ -44,14 +44,15 @@ def lmunit_not_weighted_reward_batch(data_sources: List[str],
 
     # Lazy init of the evaluator
     if not lmunit_pipeline:
-        lmunit_pipeline = orch.LMUnitScorer(
-            inference_backend='online_vllm',
-            persistent_server=False, # TODO: Make this True, rn waiting never ends
-            server_uptime=24,
+        lmunit_pipeline = orch.LMUnitScorerWeighted(
+            inference_backend='http',
+            http_backend_server_type='lmunit',
+            persistent_server=True, # TODO: Make this True, rn waiting never ends
+            #server_uptime=24,
             use_cache=False,
             #server_url=config.server_url, # If server_url is not provided, it will launch a new server
             fail_on_invalid_data=False,
-            model = "lmunit-70b"
+            model = "lmunit-70b" # TODO: need to change or make it configurable
         )
 
     all_ut_samples = []
@@ -62,16 +63,19 @@ def lmunit_not_weighted_reward_batch(data_sources: List[str],
         ut_samples = []
         for ut in extra_info['unit_tests']:
             ut_samples.append({
-                "prompt": extra_info['query'],
+                "query": extra_info['query'],
                 "response": solution_str,
                 "unit_test": ut,
+                "use_rationale": use_rationale
             })
+            
         all_ut_samples.extend(ut_samples)
         sample_boundaries.append((current_idx, current_idx + len(ut_samples)))
         current_idx += len(ut_samples)
 
-    print(f"Length of all_ut_samples: {len(all_ut_samples)}")
-    results = lmunit_pipeline(all_ut_samples)
+    # Use forward_async for async evaluation
+    results = await lmunit_pipeline.run_async(all_ut_samples)
+        
     # Calculate scores for each solution
     rewards = []
     for start_idx, end_idx in sample_boundaries:
@@ -83,15 +87,17 @@ def lmunit_not_weighted_reward_batch(data_sources: List[str],
                 scores.append(0.0)
             else:
                 scores.append(float(result.get("score", 0.0)))
-                
+        
+        # Remove not floats
         valid_scores = [item for item in scores if isinstance(item, float)]
         
         if len(valid_scores) == 0:
             rewards.append(0)
         else:
             # Calculate mean score and normalize to [0,1] range
-            rewards.append(np.mean(valid_scores)/LMUNIT_MAX_REWARD)
+            rewards.append(np.mean(valid_scores) / LMUNIT_MAX_REWARD)
 
+    print(f"lmunit_weighted_reward_batch_async: {rewards}") 
     return rewards
 
 
