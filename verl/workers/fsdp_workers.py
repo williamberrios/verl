@@ -365,6 +365,7 @@ class ActorRolloutRefWorker(Worker):
         if enable_activation_offload:
             enable_activation_offloading(actor_module_fsdp, fsdp_strategy, enable_gradient_checkpointing)
 
+        log_gpu_memory_usage(f"After {role} FSDP init", logger=None)
         log_gpu_memory_usage(f"After {role} FSDP init", logger=logger)
 
         # TODO: add more optimizer args into config
@@ -395,7 +396,8 @@ class ActorRolloutRefWorker(Worker):
                 actor_lr_scheduler = get_cosine_schedule_with_warmup(optimizer=actor_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_steps, min_lr_ratio=min_lr_ratio, num_cycles=num_cycles)
             else:
                 raise NotImplementedError(f"Warmup style {warmup_style} is not supported")
-
+            
+            log_gpu_memory_usage(f"After init {role} from HF AutoModel", logger=None)
             log_gpu_memory_usage(f"After {role} optimizer init", logger=logger)
         else:
             actor_optimizer = None
@@ -999,6 +1001,7 @@ class CriticWorker(Worker):
             enable_gradient_checkpointing = config.model.get("enable_gradient_checkpointing", False)
             enable_activation_offloading(critic_module, config.strategy, enable_gradient_checkpointing)
 
+    
         log_gpu_memory_usage("After critic FSDP", logger=None)
 
         critic_optimizer = optim.AdamW(

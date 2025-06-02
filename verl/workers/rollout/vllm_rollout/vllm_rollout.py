@@ -206,7 +206,6 @@ class vLLMRollout(BaseRollout):
                                                                                   meta_info=meta_info), **kwargs)
             mini_batches.append(mini_batch_output.batch)
         # TODO: Check the dimentions of the mini_batches and also the final batch
-        breakpoint()
         output = DataProto(batch=TensorDict.cat(mini_batches, dim=0), meta_info=meta_info)
         return output
 

@@ -85,7 +85,9 @@ def get_fsdp_wrap_policy(module, config=None, is_lora=False):
         return None
 
     default_transformer_cls_names_to_wrap = getattr(module, "_no_split_modules", None)
+    print("default_transformer_cls_names_to_wrap", default_transformer_cls_names_to_wrap)
     fsdp_transformer_layer_cls_to_wrap = _get_attr("transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap)
+    print("fsdp_transformer_layer_cls_to_wrap", fsdp_transformer_layer_cls_to_wrap)
     min_num_params = _get_attr("min_num_params", 0)
     auto_wrap_policy = None
 
@@ -425,10 +427,14 @@ def fsdp2_load_full_state_dict(model: torch.nn.Module, full_state: dict, device_
 def apply_fsdp2(model, fsdp_kwargs, config):
     """model: AutoModelForCausalLM"""
     assert CPUOffloadPolicy is not None, "PyTorch version >= 2.4 is required for using fully_shard API (FSDP2)"
-
+    print(f"model: {model}")
     default_transformer_cls_names_to_wrap = getattr(model, "_no_split_modules", None)
+    #if default_transformer_cls_names_to_wrap is None:
+    #    default_transformer_cls_names_to_wrap = ["Llama4TextDecoderLayer"]
+    #    print("default_transformer_cls_names_to_wrap is None, setting to Llama4TextDecoderLayer")
+    #print("default_transformer_cls_names_to_wrap", default_transformer_cls_names_to_wrap)
     fsdp_transformer_layer_cls_to_wrap = config.get("wrap_policy", {}).get("transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap)
-
+    print("fsdp_transformer_layer_cls_to_wrap", fsdp_transformer_layer_cls_to_wrap)
     if isinstance(fsdp_transformer_layer_cls_to_wrap, str):
         fsdp_transformer_layer_cls_to_wrap = [fsdp_transformer_layer_cls_to_wrap]
 
