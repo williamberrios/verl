@@ -125,6 +125,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         metrics[f"reward/{key_log}/mean"] = np.mean(val)
         metrics[f"reward/{key_log}/max"] = np.max(val)
         metrics[f"reward/{key_log}/min"] = np.min(val)
+        metrics[f"reward/{key_log}/std"] = np.std(val)
     return metrics
 
 

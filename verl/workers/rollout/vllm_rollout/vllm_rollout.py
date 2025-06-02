@@ -173,9 +173,40 @@ class vLLMRollout(BaseRollout):
         for key, value in old_sampling_params_args.items():
             setattr(self.sampling_params, key, value)
 
+
     @GPUMemoryLogger(role="vllm rollout spmd", logger=logger)
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
+        mini_batch_size = self.config.get("mini_batch_size_rollout", -1)
+        if mini_batch_size == -1:
+            return self._not_mini_batch_generate_sequences(prompts, **kwargs)
+        else:
+            return self._mini_batch_generate_sequences(prompts,mini_batch_size, **kwargs)
+        
+    @GPUMemoryLogger(role="vllm mini batch rollout spmd", logger=logger)
+    @torch.no_grad()
+    def _mini_batch_generate_sequences(self, prompts: DataProto, mini_batch_size: int, **kwargs) -> DataProto:
+        mini_batches = []
+        original_batch_size = prompts.batch["input_ids"].size(0)
+        meta_info = prompts.meta_info
+        for i in range(0, original_batch_size, mini_batch_size):
+            mini_batch_prompts = prompts.batch["input_ids"][i:i+mini_batch_size]
+            mini_batch_attention_mask = prompts.batch["attention_mask"][i:i+mini_batch_size]
+            mini_batch_position_ids = prompts.batch["position_ids"][i:i+mini_batch_size]
+            mini_batch_output = self._not_mini_batch_generate_sequences(DataProto(batch={"input_ids": mini_batch_prompts, 
+                                                                                         "attention_mask": mini_batch_attention_mask, 
+                                                                                         "position_ids": mini_batch_position_ids,
+                                                                                         },
+                                                                                  meta_info=meta_info), **kwargs)
+            mini_batches.append(mini_batch_output.batch)
+        # TODO: Check the dimentions of the mini_batches and also the final batch
+        breakpoint()
+        output = DataProto(batch=TensorDict.cat(mini_batches, dim=0), meta_info=meta_info)
+        return output
+
+    @GPUMemoryLogger(role="vllm not mini batch rollout spmd", logger=logger)
+    @torch.no_grad()
+    def _not_mini_batch_generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
         # rebuild vllm cache engine
         if self.config.free_cache_engine:
             self.inference_engine.init_cache_engine()
@@ -229,6 +260,8 @@ class vLLMRollout(BaseRollout):
             response = output[0].to(idx.device)
             # log_probs = output[1].to(idx.device)
 
+            # self.config.response_length is always pad to the max sequence length
+            # it should be good to stack them at the end of the batch
             if response.shape[1] < self.config.response_length:
                 response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
                 # log_probs = pad_sequence_to_length(log_probs, self.config.response_length, self.pad_token_id)
@@ -266,7 +299,10 @@ class vLLMRollout(BaseRollout):
             },
             batch_size=batch_size,
         )
-
+        
+        # TODO: remove this breakpoint:
+        # TODO: Check dimentions of the seq, atttention_mask and positions_ids
+        # TODO: it should be equal to the sequence_length, otherwise, _mini_batch_generate_sequences is not applicable
         # free vllm cache engine
         if self.config.free_cache_engine:
             self.inference_engine.free_cache_engine()

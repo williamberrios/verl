@@ -86,25 +86,27 @@ class CalculateFactualityScoreAggFactuality(orch.ListFunctionComponent):
 
 
 class FactualityPipeline(orch.Pipeline):
-    def __init__(self):
+    def __init__(self, uuid = None):
         super().__init__()
         self.fix = orch.FixKnowledge()
         self.decompose = orch.DecomposeResponseToClaims(
             model="decompose-response-to-claims-model",
             inference_backend="online_vllm",
-            persistent_server=False, 
+            persistent_server=True, 
             server_uptime=24,
             use_cache=False,
             fail_on_invalid_data=False,
+            uuid=uuid,
         )
         self.evaluate = orch.AggfactScorerWeighted(
             model="aggfact-8b",
             inference_backend="http",
             http_backend_server_type="aggfact",
-            persistent_server=False, 
+            persistent_server=True, 
             server_uptime=24,
             use_cache=False,
             fail_on_invalid_data=False,
+            uuid=uuid,
         )
         self.use_rationale = "no"
         self.fct_score = CalculateFactualityScoreAggFactuality()
@@ -136,6 +138,8 @@ def factuality_weighted_reward_batch(data_sources: List[str],
                                      solution_strs: List[str],
                                      ground_truths: List[str],
                                      extra_infos: List[Dict[str, Any]] = None,
+                                     cot_rl_experiment: bool = False,
+                                     uuid: str = None,
                                      config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using Factuality evaluation in batch.
@@ -158,10 +162,13 @@ def factuality_weighted_reward_batch(data_sources: List[str],
     """
     global factuality_pipeline
     if factuality_pipeline is None:
-        factuality_pipeline = FactualityPipeline()
+        factuality_pipeline = FactualityPipeline(uuid=uuid)
 
     # TODO: Complete the knowledge list
     knowledge_list = ["\n\n".join(f"[Chunk {i+1}]\n\n{chunk}" for i, chunk in enumerate(knowledge["chunks"])) for knowledge in extra_infos]
+    if cot_rl_experiment:
+        # Adding option to extract the final answer from the response when doing CoT
+        solution_strs = [response.split("##FINAL-ANSWER")[-1].strip() if response and "##FINAL-ANSWER" in response else "" for response in solution_strs]
     data = [
         {
             "knowledge": knowledge,

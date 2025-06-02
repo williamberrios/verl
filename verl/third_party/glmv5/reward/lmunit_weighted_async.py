@@ -19,6 +19,8 @@ async def lmunit_weighted_reward_batch_async(data_sources: List[str],
                                              solution_strs: List[str],
                                              ground_truths: List[str],
                                              extra_infos: List[Dict[str, Any]] = None,
+                                             cot_rl_experiment: bool = False,
+                                             uuid: str = None,
                                              config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using LM-based unit test evaluation in batch.
@@ -52,9 +54,13 @@ async def lmunit_weighted_reward_batch_async(data_sources: List[str],
             use_cache=False,
             #server_url=config.server_url, # If server_url is not provided, it will launch a new server
             fail_on_invalid_data=False,
+            uuid=uuid,
             model = "lmunit-70b" # TODO: need to change or make it configurable
         )
-
+    if cot_rl_experiment:
+        # Adding option to extract the final answer from the response when doing CoT
+        solution_strs = [response.split("##FINAL-ANSWER")[-1].strip() if response and "##FINAL-ANSWER" in response else "" for response in solution_strs]
+        
     all_ut_samples = []
     sample_boundaries = []  # Track where each solution's samples start/end
     current_idx = 0
@@ -97,7 +103,7 @@ async def lmunit_weighted_reward_batch_async(data_sources: List[str],
             # Calculate mean score and normalize to [0,1] range
             rewards.append(np.mean(valid_scores) / LMUNIT_MAX_REWARD)
 
-    print(f"lmunit_weighted_reward_batch_async: {rewards}") 
+    #print(f"lmunit_weighted_reward_batch_async: {rewards}") 
     return rewards
 
 

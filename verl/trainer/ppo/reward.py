@@ -62,13 +62,19 @@ def get_custom_reward_glmv5_fn(config: Dict[str, Any]) -> Optional[Callable]:
     reward_fn_config = config.get("custom_reward_function") or {}
     if not reward_fn_config:
         return None
-    
+    cot_rl_experiment = reward_fn_config.get("cot_rl_experiment", False)
     json_file_path = reward_fn_config.get("json_reward_config_path")
     output_all = reward_fn_config.get("output_all", False)
+    uuid = reward_fn_config.get("uuid", None)
+    if uuid == "":
+        uuid = None
     print(f"json_file_path: {json_file_path}")
     with open(json_file_path, 'r') as f:
         json_file = json.load(f)
-    raw_fn = compute_glmv5_rewards(config=json_file, output_all=output_all)
+    raw_fn = compute_glmv5_rewards(config=json_file,
+                                   output_all=output_all,
+                                   cot_rl_experiment=cot_rl_experiment,
+                                   uuid=uuid)
     reward_kwargs = dict(reward_fn_config.get("reward_kwargs", {}))
 
     def wrapped_fn(*args, **kwargs):

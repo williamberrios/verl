@@ -80,6 +80,8 @@ def ingen_format_batch(data_sources: List[str],
                        solution_strs: List[str],
                        ground_truths: List[str],
                        extra_infos: List[Dict[str, Any]] = None,
+                       cot_rl_experiment: bool = False,
+                       uuid: str = None,
                        config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using ingen format.

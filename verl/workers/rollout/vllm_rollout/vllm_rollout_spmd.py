@@ -185,9 +185,45 @@ class vLLMRollout(BaseRollout):
         for key, value in old_sampling_params_args.items():
             setattr(self.sampling_params, key, value)
 
-    @GPUMemoryLogger(role="vllm rollout spmd", logger=logger)
+    @GPUMemoryLogger(role="vllm full batch rollout spmd", logger=logger)
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
+        logger.info(f"Generating sequences with config: {self.config}")
+        logger.info(f"self.config.mini_batch_size_rollout: {self.config.mini_batch_size_rollout}")
+        if self.config.mini_batch_size_rollout > 0:
+            return self._mini_batch_generate_sequences(prompts, self.config.mini_batch_size_rollout, **kwargs)
+        else:
+            return self._full_batch_generate_sequences(prompts, **kwargs)
+
+    @GPUMemoryLogger(role="vllm mini batch rollout spmd", logger=logger)
+    @torch.no_grad()
+    def _mini_batch_generate_sequences(self, prompts: DataProto, mini_batch_size: int, **kwargs) -> DataProto:
+        mini_batches = []
+        original_batch_size = prompts.batch["input_ids"].size(0)
+        meta_info = prompts.meta_info
+        for i in range(0, original_batch_size, mini_batch_size):
+            mini_batch_prompts = prompts.batch["input_ids"][i:i+mini_batch_size]
+            mini_batch_attention_mask = prompts.batch["attention_mask"][i:i+mini_batch_size]
+            mini_batch_position_ids = prompts.batch["position_ids"][i:i+mini_batch_size]
+            mini_non_tensor_batch = {key: val[i:i+mini_batch_size] for key, val in prompts.non_tensor_batch.items()}
+            actual_mini_batch_size = mini_batch_prompts.size(0)
+            batch_tensor_dict = TensorDict(
+                {"input_ids": mini_batch_prompts,
+                 "attention_mask": mini_batch_attention_mask,
+                 "position_ids": mini_batch_position_ids,
+                 "prompts": mini_batch_prompts},
+                batch_size=actual_mini_batch_size,
+            )
+            mini_batch_output = self._full_batch_generate_sequences(prompts = DataProto(batch=batch_tensor_dict,
+                                                                                        non_tensor_batch=mini_non_tensor_batch,
+                                                                                        meta_info=meta_info), **kwargs)
+            mini_batches.append(mini_batch_output)
+        outputs = DataProto.concat(mini_batches)
+        return outputs
+    
+    @GPUMemoryLogger(role="vllm full batch rollout spmd", logger=logger)
+    @torch.no_grad()
+    def _full_batch_generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
         # rebuild vllm cache engine
         if (
             vllm_version
@@ -283,6 +319,7 @@ class vLLMRollout(BaseRollout):
             seq = torch.cat([idx, response], dim=-1)
 
         response_length = response.size(1)
+        print(f"response_length: {response_length}")
         delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
         delta_position_id = delta_position_id.unsqueeze(0).expand(batch_size, -1)
         if position_ids.dim() == 3:  # qwen2vl mrope

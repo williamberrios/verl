@@ -20,10 +20,16 @@ from verl.third_party.glmv5.reward.factuality_weighted import factuality_weighte
 from verl.third_party.glmv5.reward.lmunit_weighted_async import lmunit_weighted_reward_batch_async 
 from verl.third_party.glmv5.reward.factuality_weighted_async import factuality_weighted_reward_batch_async 
 from verl.third_party.glmv5.reward.ingen_format_async import ingen_format_batch_async
+from verl.third_party.glmv5.reward.think_format_async import think_format_batch_async
+from verl.third_party.glmv5.reward.inline_attribution_format_async import inline_attribution_format_batch_async
+
 from typing import Union
 import asyncio
 from typing import List
-def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -> callable:
+def compute_rewards(config: Dict[str, float] = None,
+                    output_all: bool = False,
+                    cot_rl_experiment: bool = False,
+                    uuid: str = None) -> callable:
     """
     Returns a reward function that computes weighted sum of multiple reward functions.
     
@@ -45,7 +51,7 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
     reward = reward_fn(data_source, solution_str, ground_truth, extra_info)
     """
     # Validate reward function names upfront
-    print(f"Reward functions Keys: {REWARD_FUNCTIONS.keys()}")
+    #rint(f"Reward functions Keys: {REWARD_FUNCTIONS.keys()}")
     run_async = False
     for name in config:
         if name not in REWARD_FUNCTIONS:
@@ -54,6 +60,10 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
             # TODO: Make this configurable in config
             print(f"Running {name} asynchronously")
             run_async = True
+    if cot_rl_experiment:
+        print("================================================")
+        print(f"Running in CoT RL experiment")
+        print("================================================")
             
     def reward_fn(data_sources: List[str],
                   solution_strs: List[str],
@@ -88,12 +98,16 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
             async def run_parallel(data_sources: List[str],
                                     solution_strs: List[str],
                                     ground_truths: List[str],
-                                    extra_infos: List[Dict[str, Any]]):
+                                    extra_infos: List[Dict[str, Any]],
+                                    cot_rl_experiment: bool = False,
+                                    uuid: str = None):
                 tasks = [
                         reward_pipeline_fn(data_sources,
-                                            solution_strs,
-                                            ground_truths,
-                                            extra_infos)
+                                           solution_strs,
+                                           ground_truths,
+                                           extra_infos,
+                                           cot_rl_experiment,
+                                           uuid)
                     for reward_pipeline_fn in reward_pipelines_fn
                 ]
                 return await asyncio.gather(*tasks)
@@ -101,8 +115,10 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
             rewards = asyncio.run(run_parallel(data_sources,
                                                solution_strs,
                                                ground_truths,
-                                               extra_infos))
-            print(f"Rewards: {rewards}")
+                                               extra_infos,
+                                               cot_rl_experiment,
+                                               uuid))
+            #print(f"Rewards: {rewards}")
             
             for j, reward_name in enumerate(reward_fn_names):
                 weight = config[reward_name]
@@ -120,7 +136,6 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
             else:
                 return total_rewards
         else:
-            print(f"Running {name} synchronously")
             for name, weight in config.items():
                 #print(f"name: {name}, weight: {weight}")
                 #print(f"Length of data_sources: {len(data_sources)}")
@@ -130,7 +145,9 @@ def compute_rewards(config: Dict[str, float] = None, output_all: bool = False) -
                 rewards = REWARD_FUNCTIONS[name](data_sources,
                                                     solution_strs,
                                                     ground_truths,
-                                                    extra_infos)
+                                                    extra_infos,
+                                                    cot_rl_experiment,
+                                                    uuid)
                 
                 for i in range(len(data_sources)):
                     list_dict_rewards[i][name] = rewards[i]

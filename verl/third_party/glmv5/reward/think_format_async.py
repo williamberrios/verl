@@ -13,9 +13,15 @@ from typing import Dict
 import re
 
 
-async def think_format_reward(predict_str: str) -> float:
-    pattern = re.compile(r"<think>.*</think>.*\\final_answer\{.*\}.*", re.DOTALL)
-    match_result = re.fullmatch(pattern, predict_str)
+async def think_format_reward_async(predict_str: str) -> float:
+    """
+    Description:
+    - You FIRST think about the reasoning process as an internal monologue and then provide the final answer.
+    - The reasoning process MUST BE enclosed within ##THINK and ##END-THINK and encapsulated between <commentary> and </commentary>.
+    - The final answer MUST BE after ##FINAL-ANSWER. 
+    """
+    pattern = re.compile(r"##THINK.*?##END-THINK.*?##FINAL-ANSWER.*", re.DOTALL)
+    match_result = re.fullmatch(pattern, predict_str.strip())   # TODO: strip because policy model adds a \n 
     return 1.0 if match_result else 0.0
 
 
@@ -24,6 +30,8 @@ async def think_format_batch_async(data_sources: List[str],
                                    solution_strs: List[str],
                                    ground_truths: List[str],
                                    extra_infos: List[Dict[str, Any]] = None,
+                                   cot_rl_experiment: bool = False,
+                                   uuid: str = None,
                                    config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using ingen format.
@@ -46,7 +54,7 @@ async def think_format_batch_async(data_sources: List[str],
     """
     rewards = []
     for solution in solution_strs:
-        if not await think_format_reward(solution):
+        if not await think_format_reward_async(solution):
             reward = 0.0
         else:
             reward = 1.0

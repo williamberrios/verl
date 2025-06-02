@@ -155,6 +155,7 @@ class ActorRolloutRefWorker(Worker):
         enable_gradient_checkpointing=False,
         trust_remote_code=False,
         use_liger=False,
+        attn_implementation="flash_attention_2",
         role="actor",
     ):
         from torch import optim
@@ -208,12 +209,18 @@ class ActorRolloutRefWorker(Worker):
                 actor_module_class = AutoModelForVision2Seq
             else:
                 actor_module_class = AutoModelForCausalLM
-
+            print("actor_module_class", actor_module_class)
+            print(f"use_remove_padding: {use_remove_padding}")
+            if attn_implementation == "sdpa":
+                if use_remove_padding:
+                    print("INFO: Using sdpa attn implementation with use_remove_padding=True. Apparently supported by verl for sequence packing: https://github.com/volcengine/verl/blob/366d29c0844f83fa570ca35bfdd0bc09268cf481/verl/workers/actor/dp_actor.py#L141")
+                else:
+                    print("INFO: Using sdpa attn implementation with use_remove_padding=False")
             actor_module = actor_module_class.from_pretrained(
                 pretrained_model_name_or_path=local_path,
                 torch_dtype=torch_dtype,
                 config=actor_model_config,
-                attn_implementation="flash_attention_2",
+                attn_implementation=attn_implementation,
                 trust_remote_code=trust_remote_code,
             )
             # TODO: Verify that this speed up FSDP loading of models
@@ -242,7 +249,8 @@ class ActorRolloutRefWorker(Worker):
 
         if self.rank == 0:
             print_model_size(actor_module)
-
+        # TODO: Adding twice to print in the console
+        log_gpu_memory_usage(f"After init {role} from HF AutoModel", logger=None)
         log_gpu_memory_usage(f"After init {role} from HF AutoModel", logger=logger)
 
         # We wrap FSDP for rollout as well
@@ -496,6 +504,7 @@ class ActorRolloutRefWorker(Worker):
                 enable_gradient_checkpointing=self.config.model.get("enable_gradient_checkpointing", False),
                 trust_remote_code=self.config.model.get("trust_remote_code", False),
                 use_liger=self.config.model.get("use_liger", False),
+                attn_implementation=self.config.model.get("attn_implementation", "flash_attention_2"),
                 role="actor",
             )
 
@@ -529,6 +538,7 @@ class ActorRolloutRefWorker(Worker):
                 use_remove_padding=use_remove_padding,
                 trust_remote_code=self.config.model.get("trust_remote_code", False),
                 use_liger=self.config.model.get("use_liger", False),
+                attn_implementation=self.config.model.get("attn_implementation", "flash_attention_2"),
                 role="ref",
             )[0]
             OmegaConf.set_struct(self.config.ref, True)

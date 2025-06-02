@@ -19,6 +19,8 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
                                  solution_strs: List[str],
                                  ground_truths: List[str],
                                  extra_infos: List[Dict[str, Any]] = None,
+                                 cot_rl_experiment: bool = False,
+                                 uuid: str = None,
                                  config: Dict[str, float] = None) -> List[float]:
     """
     Computes rewards using LM-based unit test evaluation in batch.
@@ -52,9 +54,13 @@ def lmunit_weighted_reward_batch(data_sources: List[str],
             use_cache=False,
             #server_url=config.server_url, # If server_url is not provided, it will launch a new server
             fail_on_invalid_data=False,
-            model = "lmunit-70b" # TODO: need to change or make it configurable
+            model = "lmunit-70b", # TODO: need to change or make it configurable
+            uuid=uuid,
         )
-
+    if cot_rl_experiment:
+        # Adding option to extract the final answer from the response when doing CoT
+        solution_strs = [response.split("##FINAL-ANSWER")[-1].strip() if response and "##FINAL-ANSWER" in response else "" for response in solution_strs]
+        
     all_ut_samples = []
     sample_boundaries = []  # Track where each solution's samples start/end
     current_idx = 0
