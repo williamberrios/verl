@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing
 import os
+from functools import partial
 
 import ray
 from typing import Dict, Any, Optional, Callable
@@ -23,6 +25,8 @@ import json
 class RewardFunction(str, Enum):
     GLM = "glmv5"
     CUSTOM = "custom"
+from verl.utils.reward_score import default_compute_score
+
 
 def get_custom_reward_fn(config):
     import importlib.util
